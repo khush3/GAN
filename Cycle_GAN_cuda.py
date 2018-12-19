@@ -38,6 +38,7 @@ print(device)
 # # files will be present in "/content/drive/My Drive".
 # !ls "/content/drive/My Drive"
 
+print('#################################|Initializing|#################################')
 
 # Create class for dataset
 import os
@@ -85,7 +86,7 @@ from torchvision import transforms, datasets
 
 data_transform = transforms.Compose([
         transforms.ToTensor(),
- #       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
  #       transforms.RandomSizedCrop(224),
  #       transforms.RandomHorizontalFlip(),
  #       transforms.ToTensor(),
@@ -267,20 +268,17 @@ G_dis.train()
 real_images_Y = torch.randn(batch_size,3,256,256)
 real_images_X = torch.randn(batch_size,3,256,256)
 
-print('###############Completed Initializations. Training started##################')
+print('##################|Completed Initializations. Training started|##################')
 
 
 #Train the C-GAN
 for epoch in range(100):
 
-    F_running_loss_real = 0.0
-    F_running_loss_fake = 0.0
-    F_running_loss_gen  = 0.0
-    G_running_loss_real = 0.0
-    G_running_loss_fake = 0.0
-    G_running_loss_gen  = 0.0
-    F_running_cyclic_loss = 0.0
-    G_running_cyclic_loss = 0.0
+    F_running_dis_loss += 0
+    F_running_loss_gen  += 0
+    G_running_dis_loss += 0
+    G_running_loss_gen  += 0
+    running_cyclic_loss += 0
 
     for i in range(len(trainset)):
 
@@ -303,14 +301,13 @@ for epoch in range(100):
         #Minimize discriminator loss against ones
         F_dis_real_output = F_dis(real_images_Y)
         F_dis_real_loss = criteriondis(F_dis_real_output.float(), ones.float())/2
-        F_dis_real_loss.backward()
-        F_dis_optimizer.step()
-
+        
         #Minimize discriminator loss against zeros
         F_gen_output = F_gen(real_images_X)
         F_dis_fake_output = F_dis(F_gen_output)
         F_dis_fake_loss = criteriondis(F_dis_fake_output.float(), zeros.float())/2
-        F_dis_fake_loss.backward()
+        F_dis_tot_loss = F_dis_fake_loss + F_dis_real_loss;
+        F_dis_tot_loss.backward()
         F_dis_optimizer.step()
 
         #Minimize generator loss
@@ -324,14 +321,13 @@ for epoch in range(100):
         #Minimize discriminator loss against ones
         G_dis_real_output = G_dis(real_images_X)
         G_dis_real_loss = criteriondis(G_dis_real_output.float(), ones.float())/2
-        G_dis_real_loss.backward()
-        G_dis_optimizer.step()
 
         #Minimize discriminator loss against zeros
         G_gen_output = G_gen(real_images_Y)
         G_dis_fake_output = G_dis(G_gen_output)
         G_dis_fake_loss = criteriondis(G_dis_fake_output.float(), zeros.float())/2
-        G_dis_fake_loss.backward()
+        G_dis_tot_loss = G_dis_fake_loss + G_dis_real_loss;
+        G_dis_tot_loss.backward()
         G_dis_optimizer.step()
 
         #Minimize generator loss
@@ -343,51 +339,46 @@ for epoch in range(100):
 
         # zero the parameter gradients
         F_gen_optimizer.zero_grad()
-        F_dis_optimizer.zero_grad()
         G_gen_optimizer.zero_grad()
-        G_dis_optimizer.zero_grad()
+
 
         #Cycle consistency Loss
         # X > Y > X
-        #F_gen_output = F_gen(real_images_X);
+        F_gen_output = F_gen(real_images_X);
         G_output = G_gen(F_gen_output);
-        F_cyclic_loss = criterion_feature(G_output, real_images_X);
-        F_gen_optimizer.step();
-        G_gen_optimizer.step();
+        cyclic_loss_2 = criterion_feature(G_output, real_images_X);
 
         # Y > X > Y
-        #G_gen_output = G_gen(real_images_Y);
+        G_gen_output = G_gen(real_images_Y);
         F_output = F_gen(G_gen_output);
-        G_cyclic_loss = criterion_feature(F_output, real_images_Y)
+        cyclic_loss_1 = criterion_feature(F_output, real_images_Y)
+        tot_cyclic_loss = cyclic_loss_1 + cyclic_loss_2;
+        tot_cyclic_loss.backward()
         G_gen_optimizer.step();
         F_gen_optimizer.step();
 
         # print statistics
-        F_running_loss_real += F_dis_real_loss.item()
-        F_running_loss_fake += F_dis_fake_loss.item()
+        F_running_dis_loss += F_dis_tot_loss.item()
         F_running_loss_gen  += F_gen_loss.item()
-        G_running_loss_real += G_dis_real_loss.item()
-        G_running_loss_fake += G_dis_fake_loss.item()
+        G_running_dis_loss += G_dis_tot_loss.item()
         G_running_loss_gen  += G_gen_loss.item()
-        F_running_cyclic_loss += F_cyclic_loss.item()
-        G_running_cyclic_loss += G_cyclic_loss.item()
+        running_cyclic_loss += tot_cyclic_loss.item()
 
         i += 1;
 
         if i % 500 == 499:    # print every 2000 mini-batches
-            print('Epoch: %d | No of images: %5d | F_real_loss: %.3f | F_fake_loss: %.3f | F_gen_loss: %.3f | F_cyclic_loss: %.3f' %
-                  (epoch + 1, i + 1, F_running_loss_real / 500, F_running_loss_fake / 500, F_running_loss_gen / 500, F_running_cyclic_loss / 500))
-            print('Epoch: %d | No of images: %5d | G_real_loss: %.3f | G_fake_loss: %.3f | G_gen_loss: %.3f | G_cyclic_loss: %.3f' %
-                  (epoch + 1, i + 1, G_running_loss_real / 500, G_running_loss_fake / 500, G_running_loss_gen / 500, G_running_cyclic_loss / 500))
-            F_running_loss_real = 0.0
-            F_running_loss_fake = 0.0
-            F_running_loss_gen  = 0.0
-            G_running_loss_real = 0.0
-            G_running_loss_fake = 0.0
-            G_running_loss_gen  = 0.0
-            F_running_cyclic_loss = 0.0
-            G_running_cyclic_loss = 0.0
+            print('Epoch: %d | No of images: %5d | F_dis_loss: %.3f | F_gen_loss: %.3f' %
+                  (epoch + 1, i + 1, F_running_dis_loss / 500, F_running_loss_gen / 500, running_cyclic_loss / 500))
+            print('Epoch: %d | No of images: %5d | G_dis_loss: %.3f | G_gen_loss: %.3f | G_cyclic_loss: %.3f' %
+                  (epoch + 1, i + 1, G_running_dis_loss / 500, G_running_loss_gen / 500, running_cyclic_loss / 500))
+            F_running_dis_loss += 0
+            F_running_loss_gen  += 0
+            G_running_dis_loss += 0
+            G_running_loss_gen  += 0
+            running_cyclic_loss += 0
             imsave(-1,F_gen(real_images_X))
+            imsave(-2,real_images_X)
+            
     #Save new parameters and output image after every epoch
     torch.save({
         'epoch':1,
@@ -400,11 +391,11 @@ for epoch in range(100):
         'G_gen_optimizer_dict':G_gen_optimizer.state_dict(),
         'G_dis_optimizer_dict':G_dis_optimizer.state_dict(),
     }, './parameters/model.tar')
-
     imsave(epoch,F_gen(real_images_X))
+    imsave(str(epoch) + '_ip',real_images_X)
     print('#############################################################################################')
 
-print('Finished Training')
+print('###########################################|Model Trained|###########################################')
 
 
 # #Uncomment to check for memory in google colab
