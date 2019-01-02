@@ -116,7 +116,7 @@ def imsave(a,img):
 
     img = img[0].cpu()
     npimg = img.detach().numpy()
-    io.imsave('images/' + str(a) + '.jpg', np.transpose(npimg, (1, 2, 0)))
+    io.imsave('Images/' + str(a) + '.jpg', np.transpose(npimg, (1, 2, 0)))
 
 
 #Discriminator model
@@ -251,9 +251,10 @@ try:
     F_dis_optimizer.load_state_dict(checkpoint['F_dis_optimizer_dict'])
     G_gen_optimizer.load_state_dict(checkpoint['G_gen_optimizer_dict'])
     G_dis_optimizer.load_state_dict(checkpoint['G_dis_optimizer_dict'])
-    epoch = checkpoint['epoch']
+    print("|Loaded saved model|")
 except:
-    pass
+    print("################||Training new model||###################")
+
 
 G_gen = G_gen.cuda()
 G_dis = G_dis.cuda()
@@ -268,17 +269,33 @@ G_dis.train()
 real_images_Y = torch.randn(batch_size,3,256,256)
 real_images_X = torch.randn(batch_size,3,256,256)
 
+F_gen_loss_buffer = np.empty((1,1))
+G_gen_loss_buffer = np.empty((1,1))
+F_dis_loss_buffer = np.empty((1,1))
+G_dis_loss_buffer = np.empty((1,1))
+cyclic_loss_buffer = np.empty((1,1))
+
+try:
+    F_gen_loss_buffer = np.load('F_gen_loss_buffer.npy')
+    G_gen_loss_buffer = np.load('G_gen_loss_buffer.npy')
+    F_dis_loss_buffer = np.load('F_dis_loss_buffer.npy')
+    G_dis_loss_buffer = np.load('G_dis_loss_buffer.npy')
+    cyclic_loss_buffer = np.load('cyclic_loss_buffer.npy')
+except:
+    print('could not load buffers..created new buffers')
+    
+
 print('##################|Completed Initializations. Training started|##################')
 
 
 #Train the C-GAN
 for epoch in range(100):
 
-    F_running_dis_loss += 0
-    F_running_loss_gen  += 0
-    G_running_dis_loss += 0
-    G_running_loss_gen  += 0
-    running_cyclic_loss += 0
+    F_running_dis_loss = 0
+    F_running_loss_gen  = 0
+    G_running_dis_loss = 0
+    G_running_loss_gen  = 0
+    running_cyclic_loss = 0
 
     for i in range(len(trainset)):
 
@@ -301,7 +318,7 @@ for epoch in range(100):
         #Minimize discriminator loss against ones
         F_dis_real_output = F_dis(real_images_Y)
         F_dis_real_loss = criteriondis(F_dis_real_output.float(), ones.float())/2
-        
+
         #Minimize discriminator loss against zeros
         F_gen_output = F_gen(real_images_X)
         F_dis_fake_output = F_dis(F_gen_output)
@@ -314,8 +331,8 @@ for epoch in range(100):
         F_gen_output = F_gen(real_images_X)
         F_dis_fake_output = F_dis(F_gen_output)
         F_gen_loss = criteriondis(F_dis_fake_output.float(), ones.float())
-        F_gen_loss.backward()
-        F_gen_optimizer.step()
+        #F_gen_loss.backward()
+        #F_gen_optimizer.step()
 
         #G
         #Minimize discriminator loss against ones
@@ -334,12 +351,12 @@ for epoch in range(100):
         G_gen_output = G_gen(real_images_Y)
         G_dis_fake_output = G_dis(G_gen_output)
         G_gen_loss = criteriondis(G_dis_fake_output.float(), ones.float())
-        G_gen_loss.backward()
-        G_gen_optimizer.step()
+        #G_gen_loss.backward()
+        #G_gen_optimizer.step()
 
         # zero the parameter gradients
-        F_gen_optimizer.zero_grad()
-        G_gen_optimizer.zero_grad()
+        #F_gen_optimizer.zero_grad()
+        #G_gen_optimizer.zero_grad()
 
 
         #Cycle consistency Loss
@@ -352,36 +369,54 @@ for epoch in range(100):
         G_gen_output = G_gen(real_images_Y);
         F_output = F_gen(G_gen_output);
         cyclic_loss_1 = criterion_feature(F_output, real_images_Y)
-        tot_cyclic_loss = cyclic_loss_1 + cyclic_loss_2;
-        tot_cyclic_loss.backward()
+        tot_cyclic_loss = 10*(cyclic_loss_1 + cyclic_loss_2);
+        #tot_cyclic_loss.backward()
+        F_identity_loss = criterion_feature(F_output, real_images_X)*5
+        G_identity_loss = criterion_feature(G_output, real_images_Y)*5
+        F_gen_loss_tot = F_gen_loss + tot_cyclic_loss + F_identity_loss
+        G_gen_loss_tot = G_gen_loss + tot_cyclic_loss + G_identity_loss
+        F_gen_loss_tot.backward(retain_graph = True)
+        G_gen_loss_tot.backward(retain_graph = True)
         G_gen_optimizer.step();
         F_gen_optimizer.step();
 
         # print statistics
         F_running_dis_loss += F_dis_tot_loss.item()
-        F_running_loss_gen  += F_gen_loss.item()
+        F_running_loss_gen  += F_gen_loss_tot.item()
         G_running_dis_loss += G_dis_tot_loss.item()
-        G_running_loss_gen  += G_gen_loss.item()
+        G_running_loss_gen  += G_gen_loss_tot.item()
         running_cyclic_loss += tot_cyclic_loss.item()
 
         i += 1;
 
         if i % 500 == 499:    # print every 2000 mini-batches
             print('Epoch: %d | No of images: %5d | F_dis_loss: %.3f | F_gen_loss: %.3f' %
-                  (epoch + 1, i + 1, F_running_dis_loss / 500, F_running_loss_gen / 500, running_cyclic_loss / 500))
-            print('Epoch: %d | No of images: %5d | G_dis_loss: %.3f | G_gen_loss: %.3f | G_cyclic_loss: %.3f' %
-                  (epoch + 1, i + 1, G_running_dis_loss / 500, G_running_loss_gen / 500, running_cyclic_loss / 500))
-            F_running_dis_loss += 0
-            F_running_loss_gen  += 0
-            G_running_dis_loss += 0
-            G_running_loss_gen  += 0
-            running_cyclic_loss += 0
-            imsave(-1,F_gen(real_images_X))
-            imsave(-2,real_images_X)
+                  (epoch + 1, i + 1, F_running_dis_loss / 500, F_running_loss_gen / 500))
+            print('Epoch: %d | No of images: %5d | G_dis_loss: %.3f | G_gen_loss: %.3f' %
+                  (epoch + 1, i + 1, G_running_dis_loss / 500, G_running_loss_gen / 500))
+            print('Cyclic loss: %.3f'%
+                  (running_cyclic_loss / 500))
+            imsave('temp_gen',F_gen(real_images_X))
+            imsave('temp_ip',real_images_X)
+            F_gen_loss_buffer = np.append(F_gen_loss_buffer, F_running_loss_gen)
+            G_gen_loss_buffer = np.append(G_gen_loss_buffer, G_running_loss_gen)
+            F_dis_loss_buffer = np.append(F_dis_loss_buffer, F_running_dis_loss)
+            G_dis_loss_buffer = np.append(G_dis_loss_buffer, G_running_dis_loss)
+            cyclic_loss_buffer = np.append(cyclic_loss_buffer, running_cyclic_loss)
+            F_running_dis_loss = 0
+            F_running_loss_gen  = 0
+            G_running_dis_loss = 0
+            G_running_loss_gen  = 0
+            running_cyclic_loss = 0
+            #save loss buffers
+            np.save('F_gen_loss_buffer',F_gen_loss_buffer)
+            np.save('G_gen_loss_buffer',G_gen_loss_buffer)
+            np.save('F_dis_loss_buffer',F_dis_loss_buffer)
+            np.save('G_dis_loss_buffer',G_dis_loss_buffer)
+            np.save('cyclic_loss_buffer',cyclic_loss_buffer)
             
     #Save new parameters and output image after every epoch
     torch.save({
-        'epoch':1,
         'F_gen_dict': F_gen.state_dict(),
         'F_dis_dict': F_dis.state_dict(),
         'G_gen_dict': G_gen.state_dict(),
