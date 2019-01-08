@@ -171,7 +171,7 @@ class Generator(nn.Module):
         )
 
         self.resnet = nn.Sequential(
-            nn.Conv2d(256, 256, kernel_size = (1), stride= 1),
+            nn.Conv2d(256, 256, kernel_size = (3), stride= 1, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.Conv2d(256, 256, kernel_size = (3), stride= 1, padding=1),
@@ -242,7 +242,7 @@ F_dis = F_dis.cuda()
 
 try:
     #Load previously saved model
-    checkpoint = torch.load('./parameters/model.tar')
+    checkpoint = torch.load('./parameters/model2.tar')
     F_gen.load_state_dict(checkpoint['F_gen_dict'])
     F_dis.load_state_dict(checkpoint['F_dis_dict'])
     G_gen.load_state_dict(checkpoint['G_gen_dict'])
@@ -287,7 +287,7 @@ except:
     print('could not load buffers..created new buffers')
 
 
-print('##################|Completed Initializations. Training started|##################')
+print('################|Completed Initializations. Training started|################')
 
 
 #Train the C-GAN
@@ -358,8 +358,8 @@ for epoch in range(100):
         #G_gen_optimizer.step()
 
         # zero the parameter gradients
-        #F_gen_optimizer.zero_grad()
-        #G_gen_optimizer.zero_grad()
+        F_gen_optimizer.zero_grad()
+        G_gen_optimizer.zero_grad()
 
 
         #Cycle consistency Loss
@@ -374,14 +374,14 @@ for epoch in range(100):
         cyclic_loss_1 = criterion_feature(F_output, real_images_Y)
         tot_cyclic_loss = 10*(cyclic_loss_1 + cyclic_loss_2);
         #tot_cyclic_loss.backward()
-        F_identity_loss = criterion_feature(F_output, real_images_X)*5
-        G_identity_loss = criterion_feature(G_output, real_images_Y)*5
+        F_identity_loss = criterion_feature(F_gen(real_images_Y), real_images_Y)*5
+        G_identity_loss = criterion_feature(G_gen(real_images_X), real_images_X)*5
         tot_identity_loss = F_identity_loss + G_identity_loss
         F_gen_loss_tot = F_gen_loss + tot_cyclic_loss + F_identity_loss
         G_gen_loss_tot = G_gen_loss + tot_cyclic_loss + G_identity_loss
         F_gen_loss_tot.backward(retain_graph = True)
-        F_gen_optimizer.step();
         G_gen_loss_tot.backward(retain_graph = True)
+        F_gen_optimizer.step();
         G_gen_optimizer.step();
 
 
@@ -395,7 +395,7 @@ for epoch in range(100):
 
         i += 1;
 
-        if i % 50 == 49:    # print every 2000 mini-batches
+        if i % 500 == 499:    # print every 2000 mini-batches
             print('Epoch: %d | No of images: %5d | Cyclic loss: %.3f | Identity Loss: %.3f' %
                   (epoch + 1, i + 1,running_cyclic_loss / 500, running_identity_loss))
             print('F_dis_loss: %.3f | F_gen_loss: %.3f | G_dis_loss: %.3f | G_gen_loss: %.3f' %
@@ -433,7 +433,7 @@ for epoch in range(100):
         'F_dis_optimizer_dict':F_dis_optimizer.state_dict(),
         'G_gen_optimizer_dict':G_gen_optimizer.state_dict(),
         'G_dis_optimizer_dict':G_dis_optimizer.state_dict(),
-    }, './parameters/model.tar')
+    }, './parameters/model2.tar')
     imsave(epoch,F_gen(real_images_X))
     imsave(str(epoch) + '_ip',real_images_X)
     print('#############################################################################################')
